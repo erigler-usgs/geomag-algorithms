@@ -2,6 +2,7 @@ from __future__ import absolute_import
 
 from .Algorithm import Algorithm
 from .AlgorithmException import AlgorithmException
+import json
 import numpy as np
 from numpy.lib import stride_tricks as npls
 import scipy.signal as sps
@@ -13,29 +14,57 @@ class FilterAlgorithm(Algorithm):
         Filter Algorithm that filters and downsamples data
     """
 
-    def __init__(self, window=None, decimation=1, sample_period=None,
-                 location=None, inchannels=None, outchannels=None):
+    def __init__(self, window=None, sample_period=None, decimation=None, 
+                 statefile=None):
         
-        Algorithm.__init__(self, inchannels=inchannels,
-            outchannels=outchannels)
+        Algorithm.__init__(self, inchannels=None, outchannels=None)
         
         if window is None:
             # default to standard INTERMAGNET one-minute filter coefficients
+            # FIXME: move this into a dedicated method
             self.numtaps = 91
-            self.window = sps.get_window(window=('gaussian', 15.8734),
-                                                    Nx=self.numtaps)
+            window = sps.get_window(window=('gaussian', 15.8734),
+                                            Nx=self.numtaps)
+            window = window / np.sum(window)
         else:
             self.numtaps = len(window)
-            self.window = window
         
-        self.decimation = decimation
+        self.window = window
         self.sample_period = sample_period
-        self.location = location
-        self.inchannels = inchannels
-        self.outchannels = outchannels
+        self.decimation = decimation
         
-        # always normalize filter window
-        self.window = self.window / np.sum(self.window)
+        self.statefile = statefile
+        self.load_state()
+
+    def load_state(self):
+        """Load algorithm state from a file.
+
+        File name is self.statefile.
+        """
+        if self.statefile is None:
+            return
+        data = None
+        try:
+            with open(self.statefile, 'r') as f:
+                data = f.read()
+                data = json.loads(data)
+        except Exception:
+            pass
+        if data is None or data == '':
+            return
+        self.window = data['window']
+
+    def save_state(self):
+        """Save algorithm state to a file.
+        File name is self.statefile.
+        """
+        if self.statefile is None:
+            return
+        data = {
+            'window': list(self.window)
+        }
+        with open(self.statefile, 'w') as f:
+            f.write(json.dumps(data))
 
     def create_trace(self, channel, stats, data):
         """Utility to create a new trace object.
@@ -77,7 +106,6 @@ class FilterAlgorithm(Algorithm):
 
         out = Stream()
 
-        tr_i = 0
         for trace in stream:
             tr = trace.copy()
             if self.sample_period is None:
@@ -99,15 +127,6 @@ class FilterAlgorithm(Algorithm):
             stats.delta = stats.delta * step
             stats.npts = filtered.shape[0]
             
-            # user may need to change location code
-            if not self.location is None:
-                stats.location = self.location
-
-            # user may need to change output channel codes
-            if not self.outchannels is None:
-                stats.channel = self.outchannels[tr_i]
-                tr_i += 1
-
             trace_out = self.create_trace(
                 stats.channel, stats, filtered)
 
@@ -215,6 +234,9 @@ class FilterAlgorithm(Algorithm):
         parser.add_argument('--filter-interval',
             help='Allowed sampling intervals for filtered output',
             choices=['daily', 'day', 'hourly', 'hour', 'minute', 'second', 'tenhertz'])
+        parser.add_argument('--filter-statefile',
+                default=None,
+                help='File to store state between calls to algorithm')
 
     def configure(self, arguments):
         """Configure algorithm using comand line arguments.
@@ -224,8 +246,6 @@ class FilterAlgorithm(Algorithm):
             parsed command line arguments
         """
         Algorithm.configure(self, arguments)
-        self.inchannels = self._inchannels
-        self.outchannels = self._outchannels
 
         if arguments.interval in ['tenhertz']:
             self.sample_period = 0.1
@@ -237,7 +257,7 @@ class FilterAlgorithm(Algorithm):
             self.sample_period = 3600.0
         elif arguments.interval in ['day','daily']:
             self.sample_period = 86400.0
-        
+ 
         if arguments.filter_interval is None:
             self.decimation = 1
         elif arguments.filter_interval in ['tenhertz']:
@@ -251,4 +271,8 @@ class FilterAlgorithm(Algorithm):
         elif arguments.filter_interval in ['day', 'daily']:
             self.decimation = 86400.0 / self.sample_period
 
-        self.location = arguments.outlocationcode
+        # for now, this just loads/saves filter coefficients
+        self.statefile = arguments.filter_statefile
+        self.load_state()
+        self.save_state()
+

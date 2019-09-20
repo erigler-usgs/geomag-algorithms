@@ -1,4 +1,6 @@
 from geomagio.algorithm import FilterAlgorithm as filt
+import numpy as np
+import scipy.signal as sps
 import geomagio.iaga2002 as i2
 from nose.tools import assert_almost_equal
 
@@ -19,12 +21,12 @@ def test_process():
     mint = factory.parse_string(min_iaga2002_string)
     sec = factory.parse_string(sec_iaga2002_string)
 
-    # process hezf (raw) channels with loaded transform
-    a = filt(inchannels=('H', 'E', 'Z', 'F'),
-             outchannels=('H', 'E', 'Z', 'F'),
-             decimation=60,
-             sample_period=1)
-
+    # process all channels with INTERMAGNET Gaussian filter
+    numtaps = 91
+    sigma = 15.8734
+    window = sps.get_window(window=('gaussian', sigma), Nx=numtaps)
+    window = window / np.sum(window)
+    a = filt(window=window, decimation=60, sample_period=1)
     filt_bou = a.process(sec)
 
     # unpack channels from loaded minutes data file

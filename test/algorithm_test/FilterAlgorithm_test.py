@@ -1,6 +1,6 @@
 from geomagio.algorithm import FilterAlgorithm as filt
 import geomagio.iaga2002 as i2
-from nose.tools import assert_almost_equals
+from nose.tools import assert_almost_equal
 
 
 def test_process():
@@ -39,7 +39,7 @@ def test_process():
     f_filt = filt_bou.select(channel='F')[0]
 
     for r in range(mint[0].data.size):
-        assert_almost_equals(u.data[r], u_filt.data[r], 1)
-        assert_almost_equals(v.data[r], v_filt.data[r], 1)
-        assert_almost_equals(w.data[r], w_filt.data[r], 1)
-        assert_almost_equals(f.data[r], f_filt.data[r], 1)
+        assert_almost_equal(u.data[r], u_filt.data[r], 1)
+        assert_almost_equal(v.data[r], v_filt.data[r], 1)
+        assert_almost_equal(w.data[r], w_filt.data[r], 1)
+        assert_almost_equal(f.data[r], f_filt.data[r], 1)

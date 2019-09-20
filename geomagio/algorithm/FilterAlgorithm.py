@@ -1,6 +1,7 @@
 from __future__ import absolute_import
 
 from .Algorithm import Algorithm
+from .AlgorithmException import AlgorithmException
 import numpy as np
 from numpy.lib import stride_tricks as npls
 import scipy.signal as sps
@@ -9,29 +10,38 @@ from obspy.core import Stream, Stats
 
 class FilterAlgorithm(Algorithm):
     """
-        Filter Algorithm that filters and downsamples data from one second
+        Filter Algorithm that filters and downsamples data
     """
 
-    def __init__(self, decimation=None, window=None, interval=None,
-                 location=None, inchannels=None, outchannels=None,
-                 data_type=None):
+    def __init__(self, window=None, decimation=1, sample_period=None,
+                 location=None, inchannels=None, outchannels=None):
+        
         Algorithm.__init__(self, inchannels=inchannels,
             outchannels=outchannels)
-        self.numtaps = 91
-        # get filter window (standard intermagnet one-minute filter)
-        self.window = sps.get_window(window=('gaussian', 15.8734),
-                                             Nx=self.numtaps)
-        # normalize filter window
-        self.window = self.window / np.sum(self.window)
-        self.decimation = 60
-        self.sample_period = 1.0
-        self.data_type = data_type
+        
+        if window is None:
+            # default to standard INTERMAGNET one-minute filter coefficients
+            self.numtaps = 91
+            self.window = sps.get_window(window=('gaussian', 15.8734),
+                                                    Nx=self.numtaps)
+        else:
+            self.numtaps = len(window)
+            self.window = window
+        
+        self.decimation = decimation
+        self.sample_period = sample_period
         self.location = location
         self.inchannels = inchannels
         self.outchannels = outchannels
+        
+        # always normalize filter window
+        self.window = self.window / np.sum(self.window)
 
     def create_trace(self, channel, stats, data):
         """Utility to create a new trace object.
+
+        This may be necessary for more sophisticated metadata modifications, but
+        for now it simply passes inputs back to parent Algorithm class.
 
         Parameters
         ----------
@@ -47,15 +57,6 @@ class FilterAlgorithm(Algorithm):
         obspy.core.Trace
             trace containing data and metadata.
         """
-        stats = Stats(stats)
-        if self.data_type is None:
-            stats.data_type = 'variation'
-        else:
-            stats.data_type = self.data_type
-        if self.data_type is None:
-            stats.location = 'R0'
-        else:
-            stats.location = self.location
 
         trace = super(FilterAlgorithm, self).create_trace(channel, stats,
             data)
@@ -76,19 +77,37 @@ class FilterAlgorithm(Algorithm):
 
         out = Stream()
 
+        tr_i = 0
         for trace in stream:
-            data = trace.data
+            tr = trace.copy()
+            if self.sample_period is None:
+                # pad inputs if sample_period wasn't specified
+                tr.trim(
+                    starttime=(tr.stats.starttime -
+                        self.numtaps // 2 * tr.stats.delta),
+                    endtime=(tr.stats.endtime +
+                        self.numtaps // 2 * tr.stats.delta),
+                    pad=True)
+            data = tr.data
             step = self.decimation
-
+            
             filtered = self.firfilter(data, self.window, step)
 
-            stats = Stats(trace.stats)
-            # stats.channel = trace_chan_dict2[stats.channel]
-            stats.starttime = trace.stats.starttime + \
-                    self.numtaps * self.sample_period // 2
+            stats = Stats(tr.stats)
+            stats.starttime = tr.stats.starttime + \
+                    self.numtaps // 2 * stats.delta
             stats.delta = stats.delta * step
-            # stats.processing.append('[Gaussian Filter]')
             stats.npts = filtered.shape[0]
+            
+            # user may need to change location code
+            if not self.location is None:
+                stats.location = self.location
+
+            # user may need to change output channel codes
+            if not self.outchannels is None:
+                stats.channel = self.outchannels[tr_i]
+                tr_i += 1
+
             trace_out = self.create_trace(
                 stats.channel, stats, filtered)
 
@@ -116,6 +135,13 @@ class FilterAlgorithm(Algorithm):
         filtered_out : numpy.ndarray
             stream containing filtered output
         """
+
+        if step == 0 or not step % 1 == 0:
+            raise AlgorithmException(
+              'decimation step must be non-zero integer')
+        else:
+            step = int(step)
+        
         numtaps = len(window)
 
         # build view into data, with numtaps  chunks separated into
@@ -186,10 +212,9 @@ class FilterAlgorithm(Algorithm):
         parser: ArgumentParser
             command line argument parser
         """
-
-        parser.add_argument('--filter-oneminute',
-                default=None,
-                help='Select one minute filter')
+        parser.add_argument('--filter-interval',
+            help='Allowed sampling intervals for filtered output',
+            choices=['daily', 'day', 'hourly', 'hour', 'minute', 'second', 'tenhertz'])
 
     def configure(self, arguments):
         """Configure algorithm using comand line arguments.
@@ -198,4 +223,32 @@ class FilterAlgorithm(Algorithm):
         arguments: Namespace
             parsed command line arguments
         """
-        pass
+        Algorithm.configure(self, arguments)
+        self.inchannels = self._inchannels
+        self.outchannels = self._outchannels
+
+        if arguments.interval in ['tenhertz']:
+            self.sample_period = 0.1
+        elif arguments.interval in ['second']:
+            self.sample_period = 1.0
+        elif arguments.interval in ['minute']:
+            self.sample_period = 60.0
+        elif arguments.interval in ['hour', 'hourly'] :
+            self.sample_period = 3600.0
+        elif arguments.interval in ['day','daily']:
+            self.sample_period = 86400.0
+        
+        if arguments.filter_interval is None:
+            self.decimation = 1
+        elif arguments.filter_interval in ['tenhertz']:
+            self.decimation = 0.1 / self.sample_period
+        elif arguments.filter_interval in ['second']:
+            self.decimation = 1.0 / self.sample_period
+        elif arguments.filter_interval in ['minute']:
+            self.decimation = 60.0 / self.sample_period
+        elif arguments.filter_interval in ['hour', 'hourly']:
+            self.decimation = 3600.0 / self.sample_period
+        elif arguments.filter_interval in ['day', 'daily']:
+            self.decimation = 86400.0 / self.sample_period
+
+        self.location = arguments.outlocationcode

@@ -21,7 +21,9 @@ def test_process():
 
     # process hezf (raw) channels with loaded transform
     a = filt(inchannels=('H', 'E', 'Z', 'F'),
-                         outchannels=('H', 'E', 'Z', 'F'))
+             outchannels=('H', 'E', 'Z', 'F'),
+             decimation=60,
+             sample_period=1)
 
     filt_bou = a.process(sec)
 

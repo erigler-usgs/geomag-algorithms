@@ -658,7 +658,8 @@ def parse_args(args):
             type=edge.LocationCode)
     parser.add_argument('--interval',
             default='minute',
-            choices=['hourly', 'minute', 'second'])
+            help='Allowed sampling intervals',
+            choices=['daily', 'day', 'hourly', 'hour', 'minute', 'second', 'tenhertz'])
     parser.add_argument('--update',
             action='store_true',
             default=False,

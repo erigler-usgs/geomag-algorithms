@@ -411,6 +411,15 @@ def get_output_factory(args):
                 tag=args.output_edge_tag,
                 forceout=args.output_edge_forceout,
                 **output_factory_args)
+    elif output_type == 'miniseed':
+        # TODO: deal with other miniseed arguments
+        locationcode = args.outlocationcode or args.locationcode or None
+        output_factory = edge.EdgeFactory(
+                host=args.output_host,
+                port=args.output_read_port,
+                write_port=args.output_port,
+                locationCode=locationcode,
+                **output_factory_args)
     elif output_type == 'plot':
         output_factory = PlotTimeseriesFactory()
     else:
@@ -846,6 +855,7 @@ def parse_args(args):
                 'edge',
                 'iaga2002',
                 'imfjson',
+                'miniseed',
                 'pcdcp',
                 'plot',
                 'temperature',
@@ -862,6 +872,10 @@ def parse_args(args):
     parser.add_argument('--output-port',
             default=7981,
             help='Write to specified port',
+            type=int)
+    parser.add_argument('--output-read-port',
+            default=2061,
+            help='Read from specified port',
             type=int)
     parser.add_argument('--output-stdout',
             action='store_true',
